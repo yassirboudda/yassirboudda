@@ -275,7 +275,10 @@ def process(src: Path, out: Path) -> None:
             amt_rect = pymupdf.Rect(amt_cell_x[0], y0, amt_cell_x[1], y1)
 
             centered_insert(page, fmt_money(rate), rate_rect, fontsize=9.0)
-            if not is_m2:
+            if is_m2:
+                # m²: Total Amount = same as Unit Price (no qty multiplication)
+                centered_insert(page, fmt_money(rate), amt_rect, fontsize=9.0)
+            else:
                 centered_insert(page, fmt_money(qty * rate), amt_rect, fontsize=9.0)
 
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -291,7 +294,7 @@ def process(src: Path, out: Path) -> None:
     print(f"Wrote {out}")
     for pi, qty_y, qty, rate, is_m2 in PRICES:
         if is_m2:
-            print(f"  p{pi+1}: qty={qty} m2 @ {rate} → unit only")
+            print(f"  p{pi+1}: qty={qty} m2 @ {rate} → total={rate} (same as unit)")
         else:
             print(f"  p{pi+1}: qty={qty} @ {rate} → total {qty * rate:g}")
 
