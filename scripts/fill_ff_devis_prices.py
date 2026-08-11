@@ -8,7 +8,7 @@ from pathlib import Path
 import pymupdf
 
 SRC = Path("/home/ubuntu/.cursor/projects/workspace/uploads/Devis_villa_Yasmina_2_fcb5.pdf")
-OUT = Path("/workspace/output/Devis_Villa_Yasmina_FF_Prix_v1.pdf")
+OUT = Path("/workspace/output/Devis_Villa_Yasmina_FF_Prix_v2.pdf")
 
 FONT_REG = "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf"
 FONT_BOLD = "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf"
@@ -243,15 +243,16 @@ def process(src: Path, out: Path) -> None:
             else:
                 centered_insert(page, fmt_money(qty * rate), amt_rect)
 
-    # Note at the bottom of the last page only
+    # Note at the bottom of the last page, just below the last table content
     last = doc[-1]
-    last.insert_font(fontname=FONTNAME_REG, fontfile=FONT_REG)
+    last.insert_font(fontname=FONTNAME_BOLD, fontfile=FONT_BOLD)
     note = "NB: The wood used is solid wood."
+    # Place clearly under the table (table ends ~y 157 on last page)
     last.insert_text(
-        pymupdf.Point(47.9, 730.0),
+        pymupdf.Point(47.9, 190.0),
         note,
-        fontname=FONTNAME_REG,
-        fontsize=9.0,
+        fontname=FONTNAME_BOLD,
+        fontsize=11.0,
         color=(0, 0, 0),
     )
 
