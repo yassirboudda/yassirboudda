@@ -15,49 +15,48 @@ FONT_BOLD = "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf"
 FONTNAME_REG = "liberationsans"
 FONTNAME_BOLD = "liberationsans-bold"
 
-# Header replacements (exact span text)
 HEADER_MAP = {
     "Rate": "Unit Price",
     "Amount": "Total Amount",
 }
 
-# Priced rows: (page_index_0based, qty_y, qty, unit_price)
-# qty_y = baseline y of the Qty cell used to align Rate/Amount
-PRICES: list[tuple[int, float, float, float]] = [
+# (page_index, qty_y, qty, unit_price, is_m2)
+# For m² rows: only Unit Price is written (no Total Amount multiplication).
+PRICES: list[tuple[int, float, float, float, bool]] = [
     # Page 4
-    (3, 463.4, 1, 11230),   # F2 TABLE-05
-    (3, 528.0, 1, 3500),    # F3 TABLE-04
-    (3, 595.9, 2, 5500),    # F4 TABLE-03 pedestal
-    (3, 665.2, 1, 18000),   # F4 TABLE-03 TV cabinet
+    (3, 463.4, 1, 11230, False),   # F2 TABLE-05
+    (3, 528.0, 1, 3500, False),    # F3 TABLE-04
+    (3, 595.9, 2, 5500, False),    # F4 TABLE-03 pedestal
+    (3, 665.2, 1, 18000, False),   # F4 TABLE-03 TV cabinet
     # Page 5
-    (4, 634.6, 1, 4000),    # F3 TABLE-11
+    (4, 634.6, 1, 4000, False),    # F3 TABLE-11
     # Page 7
-    (6, 183.0, 8, 3500),    # F5 TABLE-06
-    (6, 258.1, 2, 9000),    # F6 TABLE
-    (6, 328.9, 1, 19000),   # F7 TABLE-08
-    (6, 395.5, 1, 23000),   # F8 TABLE-07
-    (6, 456.2, 1, 18000),   # F9 CONSOLE-06
-    (6, 613.8, 1, 31000),   # F11 CONSOLE
+    (6, 183.0, 8, 3500, False),    # F5 TABLE-06
+    (6, 258.1, 2, 9000, False),    # F6 TABLE
+    (6, 328.9, 1, 19000, False),   # F7 TABLE-08
+    (6, 395.5, 1, 23000, False),   # F8 TABLE-07
+    (6, 456.2, 1, 18000, False),   # F9 CONSOLE-06
+    (6, 613.8, 1, 31000, False),   # F11 CONSOLE
     # Page 8
-    (7, 387.0, 1, 17000),   # F3 TABLE-09
-    (7, 453.6, 2, 7000),    # F4 TABLE
-    (7, 518.5, 1, 11250),   # F5 TABLE-14
+    (7, 387.0, 1, 17000, False),   # F3 TABLE-09
+    (7, 453.6, 2, 7000, False),    # F4 TABLE
+    (7, 518.5, 1, 11250, False),   # F5 TABLE-14
     # Page 9
-    (8, 287.5, 1, 19000),   # F8 CONSOLE-02
-    # Page 17
-    (16, 170.3, 71, 220),   # FL1 skirting / plinthes
+    (8, 287.5, 1, 19000, False),   # F8 CONSOLE-02
+    # Page 17 — LM, multiply
+    (16, 170.3, 71, 220, False),   # FL1 plinthes
     # Page 20
-    (19, 252.5, 2, 31000),  # WD1 wood veneer console
-    (19, 335.9, 1, 27000),  # WD2 dining table
-    (19, 651.0, 5, 25000),  # WD2 vanity counter
+    (19, 252.5, 2, 31000, False),  # WD1 console (NO)
+    (19, 335.9, 1, 27000, False),  # WD2 dining table (NO)
+    (19, 651.0, 5, 25000, True),   # WD2 vanity (M²) — unit only
     # Page 21
-    (20, 165.7, 10, 21000),     # WD-1 shelves
-    (20, 389.2, 1, 18000),      # WD1 dresser / coiffeuse
-    (20, 471.6, 1.2, 9000),     # WD2 wood veneer shelves
+    (20, 165.7, 10, 21000, True),  # WD-1 shelves (M²) — unit only
+    (20, 389.2, 1, 18000, False),  # WD1 coiffeuse (NO)
+    (20, 471.6, 1.2, 9000, True),  # WD2 shelves (M²) — unit only
     # Page 22
-    (21, 639.6, 4.7, 42120),    # WD2 wood cabinets
+    (21, 639.6, 4.7, 42120, True), # WD2 cabinets (M2) — unit only
     # Page 23
-    (22, 106.4, 3.1, 27720),    # WD3 wood cabinets
+    (22, 106.4, 3.1, 27720, True), # WD3 cabinets (M2) — unit only
 ]
 
 
@@ -87,8 +86,25 @@ def sample_fill(pix: pymupdf.Pixmap, bbox: pymupdf.Rect) -> tuple[float, float, 
     return (1, 1, 1)
 
 
-def column_x_for_page(page: pymupdf.Page) -> tuple[float, float, float, float]:
-    """Return (rate_x0, rate_x1, amount_x0, amount_x1) from headers."""
+def page_grid(page: pymupdf.Page) -> tuple[list[float], list[float]]:
+    """Collect thin vertical/horizontal grid lines from drawings."""
+    xs: set[float] = set()
+    ys: set[float] = set()
+    for d in page.get_drawings():
+        r = d.get("rect")
+        if not r:
+            continue
+        if abs(r.x1 - r.x0) < 1.5:
+            xs.add(round(float(r.x0), 1))
+        if abs(r.y1 - r.y0) < 1.5:
+            ys.add(round(float(r.y0), 1))
+    return sorted(xs), sorted(ys)
+
+
+def column_cells(page: pymupdf.Page) -> tuple[tuple[float, float], tuple[float, float]]:
+    """Return ((rate_x0, rate_x1), (amount_x0, amount_x1)) from vertical grid."""
+    xs, _ = page_grid(page)
+    # Prefer grid lines near the Rate/Amount headers
     rate = amount = None
     for block in page.get_text("dict")["blocks"]:
         if block.get("type") != 0:
@@ -100,24 +116,72 @@ def column_x_for_page(page: pymupdf.Page) -> tuple[float, float, float, float]:
                     rate = span["bbox"]
                 elif t == "Amount":
                     amount = span["bbox"]
-    if not rate or not amount:
-        # furniture default
-        return 455.0, 505.0, 505.0, 560.0
-    # Expand columns between unit and page edge
-    rate_x0 = rate[0] - 8
-    amount_x1 = min(page.rect.width - 20, amount[2] + 20)
-    mid = (rate[2] + amount[0]) / 2
-    return rate_x0, mid, mid, amount_x1
+    candidates = [x for x in xs if x > 380]
+    if len(candidates) >= 3 and rate and amount:
+        # Find lines surrounding each header center
+        def bounds(cx: float) -> tuple[float, float]:
+            left = max((x for x in candidates if x < cx), default=cx - 25)
+            right = min((x for x in candidates if x > cx), default=cx + 25)
+            return left, right
+
+        rate_cell = bounds((rate[0] + rate[2]) / 2)
+        amt_cell = bounds((amount[0] + amount[2]) / 2)
+        return rate_cell, amt_cell
+    # Fallback furniture layout
+    return (463.6, 501.8), (501.8, 546.8)
+
+
+def row_bounds(page: pymupdf.Page, qty_y: float) -> tuple[float, float]:
+    """Find horizontal grid lines surrounding the qty row."""
+    _, ys = page_grid(page)
+    # qty_y is top of qty glyph bbox; use mid of glyph ~ qty_y+5
+    y_ref = qty_y + 5
+    above = [y for y in ys if y < y_ref - 1]
+    below = [y for y in ys if y > y_ref + 1]
+    y0 = max(above) if above else qty_y - 8
+    y1 = min(below) if below else qty_y + 20
+    # Avoid huge merged rows: clamp to a reasonable cell height
+    if y1 - y0 > 90:
+        y0 = max(y0, qty_y - 12)
+        y1 = min(y1, qty_y + 28)
+    return y0, y1
+
+
+def centered_insert(
+    page: pymupdf.Page,
+    text: str,
+    cell: pymupdf.Rect,
+    fontsize: float = 9.0,
+) -> None:
+    """Insert text centered horizontally and vertically inside cell."""
+    font = pymupdf.Font(fontfile=FONT_REG)
+    # Shrink to fit width with padding
+    pad = 2.0
+    max_w = max(cell.width - 2 * pad, 8)
+    size = fontsize
+    tw = font.text_length(text, fontsize=size)
+    if tw > max_w:
+        size = max(6.0, size * max_w / tw)
+        tw = font.text_length(text, fontsize=size)
+    # Approximate glyph height ~ size; baseline centered in cell
+    x = cell.x0 + (cell.width - tw) / 2
+    y = cell.y0 + (cell.height + size * 0.72) / 2
+    page.insert_text(
+        pymupdf.Point(x, y),
+        text,
+        fontname=FONTNAME_REG,
+        fontsize=size,
+        color=(0, 0, 0),
+    )
 
 
 def process(src: Path, out: Path) -> None:
     doc = pymupdf.open(src)
     header_jobs: list[tuple[int, dict]] = []
-    price_by_page: dict[int, list[tuple[float, float, float]]] = {}
-    for pi, qty_y, qty, rate in PRICES:
-        price_by_page.setdefault(pi, []).append((qty_y, qty, rate))
+    price_by_page: dict[int, list[tuple[float, float, float, bool]]] = {}
+    for pi, qty_y, qty, rate, is_m2 in PRICES:
+        price_by_page.setdefault(pi, []).append((qty_y, qty, rate, is_m2))
 
-    # 1) Collect header replacements
     for pi, page in enumerate(doc):
         pix = page.get_pixmap(matrix=pymupdf.Identity, alpha=False)
         for block in page.get_text("dict")["blocks"]:
@@ -128,119 +192,108 @@ def process(src: Path, out: Path) -> None:
                     t = span["text"]
                     if t not in HEADER_MAP:
                         continue
-                    bbox = pymupdf.Rect(span["bbox"])
-                    # Widen a bit so longer header fits visually after rewrite
-                    if t == "Rate":
-                        bbox.x1 = max(bbox.x1, bbox.x0 + 55)
-                    else:
-                        bbox.x1 = max(bbox.x1, bbox.x0 + 70)
-                        bbox.x0 = min(bbox.x0, bbox.x1 - 70)
+                    orig = pymupdf.Rect(span["bbox"])
                     header_jobs.append(
                         (
                             pi,
                             {
-                                "bbox": bbox,
+                                "kind": t,
+                                "orig_bbox": orig,
                                 "text": HEADER_MAP[t],
                                 "size": span["size"],
                                 "color": int_color_to_rgb(span["color"]),
-                                "fill": sample_fill(pix, pymupdf.Rect(span["bbox"])),
-                                "origin": span.get("origin", (bbox.x0, bbox.y1 - 1)),
+                                "fill": sample_fill(pix, orig),
+                                "origin": span.get("origin", (orig.x0, orig.y1 - 1)),
                                 "bold": "Bold" in span["font"],
                             },
                         )
                     )
 
-    # Apply header redactions page by page, then insert prices
     for pi, page in enumerate(doc):
         page.insert_font(fontname=FONTNAME_REG, fontfile=FONT_REG)
         page.insert_font(fontname=FONTNAME_BOLD, fontfile=FONT_BOLD)
 
-        # Capture column geometry before headers are rewritten
-        rate_x0, rate_x1, amt_x0, amt_x1 = column_x_for_page(page)
+        rate_cell_x, amt_cell_x = column_cells(page)
 
         page_headers = [j for p, j in header_jobs if p == pi]
+        # Redact original Rate/Amount glyphs only (tight bbox), then rewrite centered in columns
         for job in page_headers:
-            page.add_redact_annot(job["bbox"], fill=job["fill"], cross_out=False)
+            page.add_redact_annot(job["orig_bbox"], fill=job["fill"], cross_out=False)
         if page_headers:
             page.apply_redactions(images=pymupdf.PDF_REDACT_IMAGE_NONE)
             page.insert_font(fontname=FONTNAME_REG, fontfile=FONT_REG)
             page.insert_font(fontname=FONTNAME_BOLD, fontfile=FONT_BOLD)
 
         for job in page_headers:
-            fontname = FONTNAME_BOLD if job["bold"] else FONTNAME_REG
-            size = job["size"]
-            # Shrink if needed
-            font = pymupdf.Font(fontfile=FONT_BOLD if job["bold"] else FONT_REG)
-            tw = font.text_length(job["text"], fontsize=size)
-            if tw > job["bbox"].width:
-                size = max(6.0, size * job["bbox"].width / tw * 0.96)
-            x, y = job["origin"]
-            page.insert_text(
-                pymupdf.Point(x, y),
-                job["text"],
-                fontname=fontname,
-                fontsize=size,
-                color=job["color"],
-            )
+            if job["kind"] == "Rate":
+                cell = pymupdf.Rect(rate_cell_x[0], 54.0, rate_cell_x[1], 79.7)
+            else:
+                cell = pymupdf.Rect(amt_cell_x[0], 54.0, amt_cell_x[1], 79.7)
+            # Use full header row height from grid when available
+            _, ys = page_grid(page)
+            header_ys = [y for y in ys if 50 < y < 110]
+            if len(header_ys) >= 2:
+                cell.y0, cell.y1 = header_ys[0], header_ys[1]
 
-        # Insert unit prices + totals
+            fontname = FONTNAME_BOLD if job["bold"] else FONTNAME_REG
+            fontfile = FONT_BOLD if job["bold"] else FONT_REG
+            font = pymupdf.Font(fontfile=fontfile)
+
+            # Prefer 2-line header so it stays inside the column cell
+            words = job["text"].split(" ")
+            if len(words) >= 2:
+                lines = [" ".join(words[:-1]), words[-1]]
+            else:
+                lines = [job["text"]]
+            size = 7.2
+            max_w = max(cell.width - 3, 8)
+            while size > 5.2:
+                widths = [font.text_length(ln, fontsize=size) for ln in lines]
+                if max(widths) <= max_w:
+                    break
+                size -= 0.3
+            line_h = size * 1.15
+            block_h = line_h * len(lines)
+            y_start = cell.y0 + (cell.height - block_h) / 2 + size * 0.85
+            for i, ln in enumerate(lines):
+                tw = font.text_length(ln, fontsize=size)
+                x = cell.x0 + (cell.width - tw) / 2
+                page.insert_text(
+                    pymupdf.Point(x, y_start + i * line_h),
+                    ln,
+                    fontname=fontname,
+                    fontsize=size,
+                    color=job["color"],
+                )
+
         if pi not in price_by_page:
             continue
-        fontsize = 9.0
-        for qty_y, qty, rate in price_by_page[pi]:
-            total = qty * rate
-            # Align with qty baseline
-            baseline = qty_y + 9.5  # approx glyph baseline from bbox top
-            # Prefer matching nearby qty span baseline if possible
-            for block in page.get_text("dict")["blocks"]:
-                if block.get("type") != 0:
-                    continue
-                for line in block["lines"]:
-                    for span in line["spans"]:
-                        if abs(span["bbox"][1] - qty_y) < 0.6 and span["bbox"][0] > 370:
-                            baseline = span.get("origin", (0, span["bbox"][1] + 9))[1]
-                            fontsize = min(span["size"], 9.5)
-                            break
 
-            rate_str = fmt_money(rate)
-            total_str = fmt_money(total)
+        for qty_y, qty, rate, is_m2 in price_by_page[pi]:
+            y0, y1 = row_bounds(page, qty_y)
+            rate_rect = pymupdf.Rect(rate_cell_x[0], y0, rate_cell_x[1], y1)
+            amt_rect = pymupdf.Rect(amt_cell_x[0], y0, amt_cell_x[1], y1)
 
-            # Right-align within columns
-            font = pymupdf.Font(fontfile=FONT_REG)
-            rw = font.text_length(rate_str, fontsize=fontsize)
-            tw = font.text_length(total_str, fontsize=fontsize)
-            rate_x = max(rate_x0 + 2, rate_x1 - rw - 4)
-            amt_x = max(amt_x0 + 2, amt_x1 - tw - 4)
-
-            page.insert_text(
-                pymupdf.Point(rate_x, baseline),
-                rate_str,
-                fontname=FONTNAME_REG,
-                fontsize=fontsize,
-                color=(0, 0, 0),
-            )
-            page.insert_text(
-                pymupdf.Point(amt_x, baseline),
-                total_str,
-                fontname=FONTNAME_REG,
-                fontsize=fontsize,
-                color=(0, 0, 0),
-            )
+            centered_insert(page, fmt_money(rate), rate_rect, fontsize=9.0)
+            if not is_m2:
+                centered_insert(page, fmt_money(qty * rate), amt_rect, fontsize=9.0)
 
     out.parent.mkdir(parents=True, exist_ok=True)
     doc.set_metadata(
         {
             "title": "VILLA YASMINA GF BOQ - Unit Prices",
-            "subject": "Rate→Unit Price, Amount→Total Amount + filled prices",
+            "subject": "Centered Unit Price / Total Amount; m² rows unit-only",
             "creator": "fill_devis_prices.py",
         }
     )
     doc.save(out, garbage=4, deflate=True)
     doc.close()
     print(f"Wrote {out}")
-    print(f"Headers replaced on all pages; priced rows: {len(PRICES)}")
-    for pi, qty_y, qty, rate in PRICES:
-        print(f"  p{pi+1}: qty={qty} @ {rate} → total {qty*rate:g}")
+    for pi, qty_y, qty, rate, is_m2 in PRICES:
+        if is_m2:
+            print(f"  p{pi+1}: qty={qty} m2 @ {rate} → unit only")
+        else:
+            print(f"  p{pi+1}: qty={qty} @ {rate} → total {qty * rate:g}")
 
 
 if __name__ == "__main__":
