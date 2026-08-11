@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pymupdf
 
-SRC = Path("/home/ubuntu/.cursor/projects/workspace/uploads/Devis_villa_Yasmina_2_6796.pdf")
+SRC = Path("/home/ubuntu/.cursor/projects/workspace/uploads/Devis_villa_Yasmina_2_fcb5.pdf")
 OUT = Path("/workspace/output/Devis_Villa_Yasmina_FF_Prix_v1.pdf")
 
 FONT_REG = "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf"
