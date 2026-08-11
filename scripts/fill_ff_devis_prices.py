@@ -52,10 +52,8 @@ PRICES: list[tuple[int, float, float, float, bool]] = [
 
 def fmt_money(value: float) -> str:
     if abs(value - round(value)) < 1e-6:
-        num = f"{int(round(value)):,}".replace(",", " ")
-    else:
-        num = f"{value:,.2f}".replace(",", " ")
-    return f"{num} HT"
+        return f"{int(round(value)):,}".replace(",", " ")
+    return f"{value:,.2f}".replace(",", " ")
 
 
 def int_color_to_rgb(color: int) -> tuple[float, float, float]:
@@ -167,22 +165,6 @@ def row_bounds(page: pymupdf.Page, qty_y: float) -> tuple[float, float]:
         y0 = max(y0, qty_y - 12)
         y1 = min(y1, qty_y + 28)
     return y0, y1
-
-
-def qty_row_ys(page: pymupdf.Page) -> list[float]:
-    """Y positions of Qty values (data rows) on this page."""
-    ys: list[float] = []
-    for block in page.get_text("dict")["blocks"]:
-        if block.get("type") != 0:
-            continue
-        for line in block["lines"]:
-            for span in line["spans"]:
-                t = span["text"].strip()
-                x0, y0, _, _ = span["bbox"]
-                # Qty column sits ~368–410 depending on page layout
-                if 368 < x0 < 420 and y0 > 90 and t.replace(".", "", 1).isdigit():
-                    ys.append(float(y0))
-    return ys
 
 
 def centered_insert(page: pymupdf.Page, text: str, cell: pymupdf.Rect, fontsize: float = 8.5) -> None:
@@ -305,48 +287,22 @@ def process(src: Path, out: Path) -> None:
                     color=job["color"],
                 )
 
-        # Map priced rows by qty_y (nearest match)
-        priced: dict[float, tuple[float, float, bool]] = {}
-        for qty_y, qty, rate, is_m2 in price_by_page.get(pi, []):
-            priced[qty_y] = (qty, rate, is_m2)
-
-        # Write HT on every Unit Price / Total Amount data cell (pages with those columns)
-        if not page_headers and pi not in price_by_page:
+        # Fill only priced rows (HT stays in headers only)
+        if pi not in price_by_page:
             continue
-
-        # Cluster qty lines that share the same table row band
-        bands: dict[tuple[float, float], list[float]] = {}
-        all_qty_ys = set(qty_row_ys(page)) | set(priced.keys())
-        for qty_y in all_qty_ys:
+        for qty_y, qty, rate, is_m2 in price_by_page[pi]:
             y0, y1 = row_bounds(page, qty_y)
-            key = (round(y0, 1), round(y1, 1))
-            bands.setdefault(key, []).append(qty_y)
-
-        for (y0, y1), qty_ys in bands.items():
             rate_rect = pymupdf.Rect(rate_cell_x[0], y0, rate_cell_x[1], y1)
             amt_rect = pymupdf.Rect(amt_cell_x[0], y0, amt_cell_x[1], y1)
-            match = None
-            for qty_y in qty_ys:
-                for py, vals in priced.items():
-                    if abs(py - qty_y) < 1.5:
-                        match = vals
-                        break
-                if match is not None:
-                    break
-            if match is None:
-                centered_insert(page, "HT", rate_rect)
-                centered_insert(page, "HT", amt_rect)
-            else:
-                qty, rate, is_m2 = match
-                centered_insert(page, fmt_money(rate), rate_rect)
-                total = rate if is_m2 else qty * rate
-                centered_insert(page, fmt_money(total), amt_rect)
+            centered_insert(page, fmt_money(rate), rate_rect)
+            total = rate if is_m2 else qty * rate
+            centered_insert(page, fmt_money(total), amt_rect)
 
     out.parent.mkdir(parents=True, exist_ok=True)
     doc.set_metadata(
         {
-            "title": "VILLA YASMINA FF BOQ - Unit Prices HT",
-            "subject": "Wider Unit Price/Total Amount columns; all values marked HT",
+            "title": "VILLA YASMINA FF BOQ - Unit Prices",
+            "subject": "Wider Unit Price/Total Amount columns; HT in headers only",
             "creator": "fill_ff_devis_prices.py",
         }
     )
@@ -355,9 +311,9 @@ def process(src: Path, out: Path) -> None:
     print(f"Wrote {out}")
     for pi, qty_y, qty, rate, is_m2 in PRICES:
         if is_m2:
-            print(f"  p{pi+1}: m2 @ {rate} HT → total={rate} HT")
+            print(f"  p{pi+1}: m2 @ {rate} → total={rate}")
         else:
-            print(f"  p{pi+1}: qty={qty} @ {rate} HT → total={qty * rate:g} HT")
+            print(f"  p{pi+1}: qty={qty} @ {rate} → total={qty * rate:g}")
 
 
 if __name__ == "__main__":
