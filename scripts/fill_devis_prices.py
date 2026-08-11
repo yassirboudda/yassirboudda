@@ -8,7 +8,7 @@ from pathlib import Path
 import pymupdf
 
 SRC = Path("/home/ubuntu/.cursor/projects/workspace/uploads/Devis_villa_Yasmina_57b3.pdf")
-OUT = Path("/workspace/output/Devis_Villa_Yasmina_Prix_Unitaires.pdf")
+OUT = Path("/workspace/output/Devis_Villa_Yasmina_Prix_v2.pdf")
 
 FONT_REG = "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf"
 FONT_BOLD = "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf"
@@ -21,7 +21,7 @@ HEADER_MAP = {
 }
 
 # (page_index, qty_y, qty, unit_price, is_m2)
-# For m² rows: only Unit Price is written (no Total Amount multiplication).
+# For m² rows: Total Amount = same value as Unit Price (no qty × price).
 PRICES: list[tuple[int, float, float, float, bool]] = [
     # Page 4
     (3, 463.4, 1, 11230, False),   # F2 TABLE-05
