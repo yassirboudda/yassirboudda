@@ -91,7 +91,6 @@ def page_grid(page: pymupdf.Page) -> tuple[list[float], list[float]]:
 
 
 def column_cells(page: pymupdf.Page) -> tuple[tuple[float, float], tuple[float, float]]:
-    """Return expanded Unit Price / Total Amount column bounds."""
     xs, _ = page_grid(page)
     rate = amount = None
     for block in page.get_text("dict")["blocks"]:
@@ -104,54 +103,15 @@ def column_cells(page: pymupdf.Page) -> tuple[tuple[float, float], tuple[float, 
                     rate = span["bbox"]
                 elif t == "Amount":
                     amount = span["bbox"]
-    candidates = [x for x in xs if x > 350]
+    candidates = [x for x in xs if x > 380]
     if len(candidates) >= 3 and rate and amount:
         def bounds(cx: float) -> tuple[float, float]:
             left = max((x for x in candidates if x < cx), default=cx - 25)
             right = min((x for x in candidates if x > cx), default=cx + 25)
             return left, right
 
-        rate_b = bounds((rate[0] + rate[2]) / 2)
-        amt_b = bounds((amount[0] + amount[2]) / 2)
-    else:
-        rate_b, amt_b = (463.6, 501.8), (501.8, 546.8)
-
-    # Enlarge columns: steal a bit from Unit, extend Total Amount into right margin
-    left_expand = 14.0
-    right_expand = 28.0
-    mid_shift = 8.0  # give a bit more width to Unit Price
-    new_rate_x0 = rate_b[0] - left_expand
-    new_amt_x1 = min(page.rect.width - 14.0, amt_b[1] + right_expand)
-    mid = ((rate_b[1] + amt_b[0]) / 2) + mid_shift
-    # Keep mid between the new edges
-    mid = min(max(mid, new_rate_x0 + 42), new_amt_x1 - 48)
-    return (new_rate_x0, mid), (mid, new_amt_x1)
-
-
-def widen_price_column_strip(page: pymupdf.Page, rate_x: tuple[float, float], amt_x: tuple[float, float]) -> None:
-    """Visually enlarge Unit Price + Total Amount columns and redraw grid."""
-    xs, ys = page_grid(page)
-    table_ys = [y for y in ys if 50 < y < 750]
-    if len(table_ys) < 2:
-        return
-    y_top, y_bot = min(table_ys), max(table_ys)
-    x0, x1 = rate_x[0], amt_x[1]
-    mid = rate_x[1]
-
-    # Cover old price columns (+ a little overlap) with white
-    page.draw_rect(
-        pymupdf.Rect(x0 - 0.4, y_top - 0.4, x1 + 0.4, y_bot + 0.4),
-        color=None,
-        fill=(1, 1, 1),
-        width=0,
-    )
-
-    # Outer verticals + divider
-    for x in (x0, mid, x1):
-        page.draw_line(pymupdf.Point(x, y_top), pymupdf.Point(x, y_bot), color=(0, 0, 0), width=0.7)
-    # Horizontal lines across widened strip
-    for y in table_ys:
-        page.draw_line(pymupdf.Point(x0, y), pymupdf.Point(x1, y), color=(0, 0, 0), width=0.6)
+        return bounds((rate[0] + rate[2]) / 2), bounds((amount[0] + amount[2]) / 2)
+    return (463.6, 501.8), (501.8, 546.8)
 
 
 def row_bounds(page: pymupdf.Page, qty_y: float) -> tuple[float, float]:
@@ -167,14 +127,14 @@ def row_bounds(page: pymupdf.Page, qty_y: float) -> tuple[float, float]:
     return y0, y1
 
 
-def centered_insert(page: pymupdf.Page, text: str, cell: pymupdf.Rect, fontsize: float = 8.5) -> None:
+def centered_insert(page: pymupdf.Page, text: str, cell: pymupdf.Rect, fontsize: float = 9.0) -> None:
     font = pymupdf.Font(fontfile=FONT_REG)
     pad = 2.0
     max_w = max(cell.width - 2 * pad, 8)
     size = fontsize
     tw = font.text_length(text, fontsize=size)
     if tw > max_w:
-        size = max(5.5, size * max_w / tw)
+        size = max(6.0, size * max_w / tw)
         tw = font.text_length(text, fontsize=size)
     x = cell.x0 + (cell.width - tw) / 2
     y = cell.y0 + (cell.height + size * 0.72) / 2
@@ -226,18 +186,12 @@ def process(src: Path, out: Path) -> None:
         rate_cell_x, amt_cell_x = column_cells(page)
 
         page_headers = [j for p, j in header_jobs if p == pi]
-
-        # Redact old Rate/Amount labels first
         for job in page_headers:
-            page.add_redact_annot(job["orig_bbox"], fill=(1, 1, 1), cross_out=False)
+            page.add_redact_annot(job["orig_bbox"], fill=job["fill"], cross_out=False)
         if page_headers:
             page.apply_redactions(images=pymupdf.PDF_REDACT_IMAGE_NONE)
             page.insert_font(fontname=FONTNAME_REG, fontfile=FONT_REG)
             page.insert_font(fontname=FONTNAME_BOLD, fontfile=FONT_BOLD)
-
-        # Enlarge Unit Price / Total Amount columns visually on pages that have them
-        if page_headers:
-            widen_price_column_strip(page, rate_cell_x, amt_cell_x)
 
         _, ys = page_grid(page)
         header_ys = [y for y in ys if 50 < y < 110]
@@ -252,28 +206,18 @@ def process(src: Path, out: Path) -> None:
             fontname = FONTNAME_BOLD if job["bold"] else FONTNAME_REG
             fontfile = FONT_BOLD if job["bold"] else FONT_REG
             font = pymupdf.Font(fontfile=fontfile)
+            # Fixed 3-line headers so "(HT)" always fits inside the column
             if job["kind"] == "Rate":
-                lines = ["Unit Price", "(HT)"]
+                lines = ["Unit", "Price", "(HT)"]
             else:
-                lines = ["Total Amount", "(HT)"]
-            size = 7.0
-            max_w = max(cell.width - 3, 8)
+                lines = ["Total", "Amount", "(HT)"]
+            size = 6.4
+            max_w = max(cell.width - 2, 8)
             while size > 5.0:
                 if max(font.text_length(ln, fontsize=size) for ln in lines) <= max_w:
                     break
-                size -= 0.25
-            # If still too wide, split first line
-            if font.text_length(lines[0], fontsize=size) > max_w:
-                if job["kind"] == "Rate":
-                    lines = ["Unit", "Price", "(HT)"]
-                else:
-                    lines = ["Total", "Amount", "(HT)"]
-                size = 6.2
-                while size > 5.0:
-                    if max(font.text_length(ln, fontsize=size) for ln in lines) <= max_w:
-                        break
-                    size -= 0.2
-            line_h = size * 1.08
+                size -= 0.2
+            line_h = size * 1.05
             block_h = line_h * len(lines)
             y_start = cell.y0 + (cell.height - block_h) / 2 + size * 0.8
             for i, ln in enumerate(lines):
@@ -287,7 +231,6 @@ def process(src: Path, out: Path) -> None:
                     color=job["color"],
                 )
 
-        # Fill only priced rows (HT stays in headers only)
         if pi not in price_by_page:
             continue
         for qty_y, qty, rate, is_m2 in price_by_page[pi]:
@@ -295,14 +238,16 @@ def process(src: Path, out: Path) -> None:
             rate_rect = pymupdf.Rect(rate_cell_x[0], y0, rate_cell_x[1], y1)
             amt_rect = pymupdf.Rect(amt_cell_x[0], y0, amt_cell_x[1], y1)
             centered_insert(page, fmt_money(rate), rate_rect)
-            total = rate if is_m2 else qty * rate
-            centered_insert(page, fmt_money(total), amt_rect)
+            if is_m2:
+                centered_insert(page, fmt_money(rate), amt_rect)
+            else:
+                centered_insert(page, fmt_money(qty * rate), amt_rect)
 
     out.parent.mkdir(parents=True, exist_ok=True)
     doc.set_metadata(
         {
             "title": "VILLA YASMINA FF BOQ - Unit Prices",
-            "subject": "Wider Unit Price/Total Amount columns; HT in headers only",
+            "subject": "HT only in Unit Price / Total Amount headers; original cell sizes; prices unchanged",
             "creator": "fill_ff_devis_prices.py",
         }
     )
