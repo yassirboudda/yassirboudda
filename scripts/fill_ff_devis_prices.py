@@ -16,8 +16,8 @@ FONTNAME_REG = "liberationsans"
 FONTNAME_BOLD = "liberationsans-bold"
 
 HEADER_MAP = {
-    "Rate": "Unit Price",
-    "Amount": "Total Amount",
+    "Rate": "Unit Price (HT)",
+    "Amount": "Total Amount (HT)",
 }
 
 # (page_index, qty_y, qty, unit_price, is_m2)
@@ -206,17 +206,20 @@ def process(src: Path, out: Path) -> None:
             fontname = FONTNAME_BOLD if job["bold"] else FONTNAME_REG
             fontfile = FONT_BOLD if job["bold"] else FONT_REG
             font = pymupdf.Font(fontfile=fontfile)
-            words = job["text"].split(" ")
-            lines = [" ".join(words[:-1]), words[-1]] if len(words) >= 2 else [job["text"]]
-            size = 7.2
-            max_w = max(cell.width - 3, 8)
-            while size > 5.2:
+            # Fixed 3-line headers so "(HT)" always fits inside the column
+            if job["kind"] == "Rate":
+                lines = ["Unit", "Price", "(HT)"]
+            else:
+                lines = ["Total", "Amount", "(HT)"]
+            size = 6.4
+            max_w = max(cell.width - 2, 8)
+            while size > 5.0:
                 if max(font.text_length(ln, fontsize=size) for ln in lines) <= max_w:
                     break
-                size -= 0.3
-            line_h = size * 1.15
+                size -= 0.2
+            line_h = size * 1.05
             block_h = line_h * len(lines)
-            y_start = cell.y0 + (cell.height - block_h) / 2 + size * 0.85
+            y_start = cell.y0 + (cell.height - block_h) / 2 + size * 0.8
             for i, ln in enumerate(lines):
                 tw = font.text_length(ln, fontsize=size)
                 x = cell.x0 + (cell.width - tw) / 2
