@@ -243,17 +243,30 @@ def process(src: Path, out: Path) -> None:
             else:
                 centered_insert(page, fmt_money(qty * rate), amt_rect)
 
+    # Note at the bottom of the last page only
+    last = doc[-1]
+    last.insert_font(fontname=FONTNAME_REG, fontfile=FONT_REG)
+    note = "NB: The wood used is solid wood."
+    last.insert_text(
+        pymupdf.Point(47.9, 730.0),
+        note,
+        fontname=FONTNAME_REG,
+        fontsize=9.0,
+        color=(0, 0, 0),
+    )
+
     out.parent.mkdir(parents=True, exist_ok=True)
     doc.set_metadata(
         {
             "title": "VILLA YASMINA FF BOQ - Unit Prices",
-            "subject": "HT only in Unit Price / Total Amount headers; original cell sizes; prices unchanged",
+            "subject": "HT in Unit Price / Total Amount headers; solid wood note on last page",
             "creator": "fill_ff_devis_prices.py",
         }
     )
     doc.save(out, garbage=4, deflate=True)
     doc.close()
     print(f"Wrote {out}")
+    print(f"  last-page note: {note}")
     for pi, qty_y, qty, rate, is_m2 in PRICES:
         if is_m2:
             print(f"  p{pi+1}: m2 @ {rate} → total={rate}")
